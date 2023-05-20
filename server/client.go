@@ -4412,11 +4412,46 @@ func (c *client) processMsgResults(acc *Account, r *SublistResult, msg, deliver,
 		}
 
 		if rsub != nil {
-			// If we are here we tried to deliver to a local qsub
-			// but failed. So we will send it to a remote or leaf node.
-			c.addSubToRouteTargets(rsub)
-			if flags&pmrCollectQueueNames != 0 {
-				queues = append(queues, rsub.queue)
+		
+			//For leaf nodes, distribute traffic based on weight
+			if rsub.client.kind == LEAF {
+
+				var wlqs []*subscription
+
+				//Weight is currently calculated as count of subscription. In future, it should consider RTT as well.
+				for i := 0; i < lqs; i++ {
+					var qw = qsubs[i].qw
+					var j int32
+
+					//Add the same subscription weight number of times
+					for ; j < qw; j++ {
+						wlqs = append(wlqs, qsubs[i])
+					}
+				}
+
+				//Perform random distribution on weighted subscription
+				var lsindex = 0
+				var llqs = len(wlqs)
+
+				if llqs > 1 {
+					lsindex = c.in.prand.Int() % llqs
+				}
+
+				if lsindex+i < llqs {
+					rsub = wlqs[(lsindex + i)]
+				} else {
+					rsub = wlqs[(lsindex+1)%llqs]
+				}
+
+				c.addSubToRouteTargets(rsub)
+
+			} else {
+				// If we are here we tried to deliver to a local qsub
+				// but failed. So we will send it to a remote or leaf node.
+				c.addSubToRouteTargets(rsub)
+				if flags&pmrCollectQueueNames != 0 {
+					queues = append(queues, rsub.queue)
+				}
 			}
 		}
 	}
